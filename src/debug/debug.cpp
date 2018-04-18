@@ -18,6 +18,8 @@
  * with sot-core.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#define VP_DEBUG
+
 #include <sot/core/debug.hh>
 #include <fstream>
 #include <ios>

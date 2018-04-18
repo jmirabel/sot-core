@@ -22,8 +22,8 @@
 /* --- INCLUDE --------------------------------------------------------- */
 /* --------------------------------------------------------------------- */
 
-//#define VP_DEBUG
-//#define VP_DEBUG_MODE 45
+#define VP_DEBUG
+#define VP_DEBUG_MODE 10
 #include <sot/core/debug.hh>
 
 /* SOT */
@@ -402,7 +402,7 @@ static void computeJacobianActivated( Task* taskSpec,
 /* --------------------------------------------------------------------- */
 
 
-//#define WITH_CHRONO
+#define WITH_CHRONO
 
 
 #ifdef  WITH_CHRONO
@@ -421,7 +421,7 @@ static void computeJacobianActivated( Task* taskSpec,
       gettimeofday(&t1,NULL);\
       dt = ( (double)(t1.tv_sec-t0.tv_sec) * 1000.* 1000.\
 	     + (double)(t1.tv_usec-t0.tv_usec)  );\
-      sotDEBUG(1) << "dt: "<< dt / 1000. << std::endl
+      sotDEBUG(1) << "dt: "<< dt / 1000. << '\n'
 #   define sotINITPARTCOUNTERS  struct timeval tpart0
 #   define sotSTARTPARTCOUNTERS  gettimeofday(&tpart0,NULL)
 #   define sotCOUNTER(nbc1,nbc2) \
@@ -430,7 +430,7 @@ static void computeJacobianActivated( Task* taskSpec,
 		   +    (double)(tpart##nbc2.tv_usec-tpart##nbc1.tv_usec)  )
 #   define sotINITCOUNTER(nbc1) \
    struct timeval tpart##nbc1; double dt##nbc1=0;
-#   define sotPRINTCOUNTER(nbc1)  sotDEBUG(1) << "dt" << nbc1 << " = " << dt##nbc1 << std::endl
+#   define sotPRINTCOUNTER(nbc1)  sotDEBUG(1) << "dt" << nbc1 << " = " << dt##nbc1 << '\n'
 #else // #ifdef  WITH_CHRONO
 #   define sotINIT_CHRONO1
 #   define sotSTART_CHRONO1
@@ -457,11 +457,16 @@ taskVectorToMlVector( const VectorMultiBound& taskVector, Vector& res )
 dynamicgraph::Vector& Sot::
 computeControlLaw( dynamicgraph::Vector& control,const int& iterTime )
 {
+  if (!dynamicgraph::sot::sotDEBUGFLOW.outputbuffer.good()) {
+          dynamicgraph::sot::DebugTrace::openFile();
+  }
   sotDEBUGIN(15);
 
   sotINIT_CHRONO1; sotINITPARTCOUNTERS;
   sotINITCOUNTER(1); sotINITCOUNTER(2);sotINITCOUNTER(3);sotINITCOUNTER(4);
   sotINITCOUNTER(5); sotINITCOUNTER(6);sotINITCOUNTER(7);sotINITCOUNTER(8);
+  sotINITCOUNTER(9);
+  sotINITCOUNTER(10);
 
   sotSTART_CHRONO1;
   sotSTARTPARTCOUNTERS;
@@ -489,7 +494,9 @@ computeControlLaw( dynamicgraph::Vector& control,const int& iterTime )
     {
       sotDEBUGF(5,"Rank %d.",iterTask);
       TaskAbstract & task = **iter;
-      sotDEBUG(15) << "Task: e_" << task.getName() << std::endl;
+      sotDEBUG(1) << "Task: e_" << task.getName() << std::endl;
+
+      sotSTARTPARTCOUNTERS;
       const dynamicgraph::Matrix &Jac = task.jacobianSOUT(iterTime);
       sotCOUNTER(0,1); // Direct Dynamic
 
@@ -513,6 +520,7 @@ computeControlLaw( dynamicgraph::Vector& control,const int& iterTime )
 
       taskVectorToMlVector(task.taskSOUT(iterTime), mem->err);
       const dynamicgraph::Vector &err = mem->err;
+      sotCOUNTER(1,10); // Direct Dynamic
 
       Jp.resize( mJ,nJ );
       Jt.resize( nJ,mJ );
@@ -526,25 +534,25 @@ computeControlLaw( dynamicgraph::Vector& control,const int& iterTime )
           ||(task.jacobianSOUT.getTime()>mem->rankSINOUT.getTime())
           ||(task.jacobianSOUT.getTime()>mem->singularBaseImageSINOUT.getTime()) )
     {
-	sotDEBUG(2) <<"Recompute inverse."<<endl;
+	// sotDEBUG(2) <<"Recompute inverse."<<endl;
 
 	/* --- FIRST ALLOCS --- */
-	sotDEBUG(1) << "Size = "
-		    << std::min(nJ, mJ) + mem->Jff.cols()*mem->Jff.rows()
-	  + mem->Jact.cols()*mem->Jact.rows() << std::endl;
+	// sotDEBUG(1) << "Size = "
+		    // << std::min(nJ, mJ) + mem->Jff.cols()*mem->Jff.rows()
+	  // + mem->Jact.cols()*mem->Jact.rows() << std::endl;
 
-	sotDEBUG(1) << std::endl;
-	sotDEBUG(1) << "nJ=" << nJ << " " << "Jac.cols()=" << Jac.cols()
-		    <<" "<< "mJ=" << mJ<<std::endl;
+	// sotDEBUG(1) << std::endl;
+	// sotDEBUG(1) << "nJ=" << nJ << " " << "Jac.cols()=" << Jac.cols()
+		    // <<" "<< "mJ=" << mJ<<std::endl;
 	mem->Jff.resize( nJ,Jac.cols()-mJ ); // number dofs, number constraints
-	sotDEBUG(1) << std::endl;
+	// sotDEBUG(1) << std::endl;
 	mem->Jact.resize( nJ,mJ );
-	sotDEBUG(1) << std::endl;
-	sotDEBUG(1) << "Size = "
-		    << std::min(nJ, mJ) + mem->Jff.cols()*mem->Jff.rows()
-	  + mem->Jact.cols()*mem->Jact.rows() << std::endl;
+	// sotDEBUG(1) << std::endl;
+	// sotDEBUG(1) << "Size = "
+		    // << std::min(nJ, mJ) + mem->Jff.cols()*mem->Jff.rows()
+	  // + mem->Jact.cols()*mem->Jact.rows() << std::endl;
 
-	/***/sotCOUNTER(1,2); // first allocs
+	/***/sotCOUNTER(10,2); // first allocs
 
 	/* --- COMPUTE JK --- */
 	computeJacobianConstrained( task,K );
@@ -559,6 +567,7 @@ computeControlLaw( dynamicgraph::Vector& control,const int& iterTime )
 	/***/sotCOUNTER(4,5); // Jt*S
 	
 	/* --- PINV --- */
+	sotDEBUG(1) << "Size = " << Jt.rows() << " x " << Jt.cols() << '\n';
         svd.compute (Jt);
         Eigen::dampedInverse (svd, Jp, th);
 	/***/sotCOUNTER(5,6); // PINV
@@ -569,6 +578,7 @@ computeControlLaw( dynamicgraph::Vector& control,const int& iterTime )
           while ( rankJ < svd.singularValues().size()
               &&  th    < svd.singularValues()[rankJ])
           { ++rankJ; }
+          sotDEBUG(1) << "Ranf of J: " << rankJ << ", " << svd.singularValues().transpose().head(rankJ) << '\n';
 	}
 
 	sotDEBUG(45) << "control"<<iterTask<<" = "<<control<<endl;
@@ -621,13 +631,15 @@ computeControlLaw( dynamicgraph::Vector& control,const int& iterTime )
       /* --- OLIVIER START  --- */
       // Update by Joseph Mirabel to match Eigen API
 
-      sotDEBUG(2) << "Proj non optimal (rankJ= " <<rankJ
+      sotDEBUG(20) << "Proj non optimal (rankJ= " <<rankJ
 		  << ", iterTask ="  << iterTask
 		  << ")";
       sotDEBUG(20) << "V = " << svd.matrixV();
       sotDEBUG(20) << "Jt = " << Jt;
       sotDEBUG(20) << "JpxJt = " << Jp*Jt;
       sotDEBUG(25) << "Proj-Jp*Jt"<<iterTask<<" = "<< (Proj-Jp*Jt) <<endl;
+
+      /***/sotCOUNTER(8,9); // QDOT
 
        /* --- OLIVIER END --- */
 
@@ -636,9 +648,12 @@ computeControlLaw( dynamicgraph::Vector& control,const int& iterTime )
        iterTask++;
        PrevProj = &Proj;
 
-       sotPRINTCOUNTER(1);     sotPRINTCOUNTER(2);    sotPRINTCOUNTER(3);
+       sotPRINTCOUNTER(1);
+       sotPRINTCOUNTER(10);
+       sotPRINTCOUNTER(2);    sotPRINTCOUNTER(3);
        sotPRINTCOUNTER(4);     sotPRINTCOUNTER(5);    sotPRINTCOUNTER(6);
        sotPRINTCOUNTER(7);     sotPRINTCOUNTER(8);
+       sotPRINTCOUNTER(9);
 
     }
 
