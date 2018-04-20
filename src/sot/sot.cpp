@@ -484,7 +484,9 @@ computeControlLaw( dynamicgraph::Vector& control,const int& iterTime )
 
   sotDEBUGF(5, " --- Time %d -------------------", iterTime );
   unsigned int iterTask = 0;
-  const Matrix* PrevProj = NULL;
+  // Matrix* PrevProj = NULL;
+  // const Matrix * PrevProj = NULL;
+  Matrix PrevProj;
   for( StackType::iterator iter = stack.begin(); iter!=stack.end();++iter )
     {
       sotDEBUGF(5,"Rank %d.",iterTask);
@@ -526,6 +528,10 @@ computeControlLaw( dynamicgraph::Vector& control,const int& iterTime )
           ||(task.jacobianSOUT.getTime()>mem->rankSINOUT.getTime())
           ||(task.jacobianSOUT.getTime()>mem->singularBaseImageSINOUT.getTime()) )
     {
+      // assert ((iterTask == 0 && PrevProj==NULL)
+          // ||  (iterTask  > 0 && PrevProj!=NULL));
+      assert ((iterTask == 0 && PrevProj.size()==0)
+          ||  (iterTask  > 0 && PrevProj.size()>0));
 	sotDEBUG(2) <<"Recompute inverse."<<endl;
 
 	/* --- FIRST ALLOCS --- */
@@ -551,7 +557,10 @@ computeControlLaw( dynamicgraph::Vector& control,const int& iterTime )
 	/***/sotCOUNTER(2,3); // compute JK
 
 	/* --- COMPUTE Jt --- */
-	if( 0<iterTask ) Jt.noalias() = JK*(*PrevProj); else { Jt = JK; }
+        if( 0<iterTask ) {
+          // Jt.noalias() = JK*(*PrevProj);
+          Jt.noalias() = JK*PrevProj;
+        } else { Jt = JK; }
 	/***/sotCOUNTER(3,4); // compute Jt
 
 	/* --- COMPUTE S --- */
@@ -608,14 +617,16 @@ computeControlLaw( dynamicgraph::Vector& control,const int& iterTime )
       /*DEBUG: normally, the first iter (ie the test below)
       * is the same than the other, starting with control_0 = q0SIN. */
       if( iterTask==0 ) control.noalias() += Jp*err;
-      else              control           += *PrevProj * (Jp*(err - JK*control));
+      // else              control           += *PrevProj * (Jp*(err - JK*control));
+      else              control           += PrevProj * (Jp*(err - JK*control));
       /***/sotCOUNTER(7,8); // QDOT
 
       /* --- OPTIMAL FORM: To debug. --- */
       if( 0==iterTask ) {
         Proj.noalias() = svd.matrixV().rightCols(svd.matrixV().cols()-rankJ);
       } else {
-        Proj.noalias() = *PrevProj * svd.matrixV().rightCols(svd.matrixV().cols()-rankJ);
+        // Proj.noalias() = *PrevProj * svd.matrixV().rightCols(svd.matrixV().cols()-rankJ);
+        Proj.noalias() = PrevProj * svd.matrixV().rightCols(svd.matrixV().cols()-rankJ);
       }
 
       /* --- OLIVIER START  --- */
@@ -634,7 +645,8 @@ computeControlLaw( dynamicgraph::Vector& control,const int& iterTime )
        sotDEBUG(15) << "q"<<iterTask<<" = "<<control<<std::endl;
        sotDEBUG(25) << "P"<<iterTask<<" = "<< Proj <<endl;
        iterTask++;
-       PrevProj = &Proj;
+       // PrevProj = &Proj;
+       PrevProj = Proj;
 
        sotPRINTCOUNTER(1);     sotPRINTCOUNTER(2);    sotPRINTCOUNTER(3);
        sotPRINTCOUNTER(4);     sotPRINTCOUNTER(5);    sotPRINTCOUNTER(6);
@@ -691,8 +703,10 @@ computeControlLaw( dynamicgraph::Vector& control,const int& iterTime )
       svd.compute (Jt);
       // TODO the two next lines could be replaced by
       Eigen::dampedInverse( svd, Jp,th );
-      if (PrevProj != NULL)
-        PJp.noalias() = (*PrevProj)*Jp;
+      // if (PrevProj != NULL)
+        // PJp.noalias() = (*PrevProj)*Jp;
+      if (PrevProj.size() == 0)
+        PJp.noalias() = PrevProj*Jp;
       else
         PJp.noalias() = Jp;
 
@@ -704,7 +718,8 @@ computeControlLaw( dynamicgraph::Vector& control,const int& iterTime )
 
       /* ---  TRACE  --- */
       sotDEBUG(45) << "Pgrad = " << (PJp*Herr) <<endl;
-      if (PrevProj != NULL) { sotDEBUG(45) << "P = " << *PrevProj <<endl; }
+      // if (PrevProj != NULL) { sotDEBUG(45) << "P = " << *PrevProj <<endl; }
+      if (PrevProj.size() == 0) { sotDEBUG(45) << "P = " << PrevProj <<endl; }
       sotDEBUG(45) << "Jp = " << Jp <<endl;
       sotDEBUG(45) << "PJp = " << PJp <<endl;
     }
