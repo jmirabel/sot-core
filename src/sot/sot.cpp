@@ -49,6 +49,12 @@ using namespace dynamicgraph;
 DYNAMICGRAPH_FACTORY_ENTITY_PLUGIN(Sot, "SOT");
 
 const double Sot::INVERSION_THRESHOLD_DEFAULT = 1e-4;
+const Eigen::IOFormat python(Eigen::FullPrecision, 0,
+    ", ",     // coeff sep
+    ",\n",    // row sep
+    "[", "]", // row prefix and suffix
+    "[", "]"  // mat prefix and suffix
+    );
 
 /* --------------------------------------------------------------------- */
 /* --- CONSTRUCTION ---------------------------------------------------- */
@@ -56,6 +62,7 @@ const double Sot::INVERSION_THRESHOLD_DEFAULT = 1e-4;
 Sot::Sot(const std::string &name)
     : Entity(name), stack(), nbJoints(0),
       enablePostureTaskAcceleration (false),
+      maxControlIncrementSquaredNorm (std::numeric_limits<double>::max()),
       q0SIN(NULL, "sotSOT(" + name + ")::input(double)::q0"),
       proj0SIN(NULL, "sotSOT(" + name + ")::input(double)::proj0"),
       inversionThresholdSIN(NULL,
@@ -103,6 +110,18 @@ Sot::Sot(const std::string &name)
         &enablePostureTaskAcceleration, dynamicgraph::command::docDirectGetter(
           "option to bypass SVD computation for the posture task at the last"
           "level", "boolean")));
+
+  addCommand("setMaxControlIncrementSquaredNorm",
+      dynamicgraph::command::makeDirectSetter(*this,
+        &maxControlIncrementSquaredNorm, dynamicgraph::command::docDirectSetter(
+          "A task whose control increment squared norm is above this value is discarded."
+          "squaredNorm", "double")));
+
+  addCommand("getMaxControlIncrementSquaredNorm",
+      dynamicgraph::command::makeDirectGetter(*this,
+        &maxControlIncrementSquaredNorm, dynamicgraph::command::docDirectGetter(
+          "A task whose control increment squared norm is above this value is discarded."
+          "squaredNorm", "double")));
 
   docstring = "    \n"
               "    push a task into the stack.\n"
@@ -311,12 +330,14 @@ inline void makeMap (MapType& map, MatrixType& m) {
   new (&map) KernelConst_t(m.data(), m.rows(), m.cols());
 }
 
-void updateControl (MemoryTaskSOT* mem, const Matrix::Index rankJ,
-    bool has_kernel, const KernelConst_t& kernel, Vector& control)
+bool updateControl (MemoryTaskSOT* mem, const Matrix::Index rankJ,
+    bool has_kernel, const KernelConst_t& kernel, Vector& control,
+    const double& threshold)
 {
   const SVD_t &svd (mem->svd);
   Vector &tmpTask (mem->tmpTask);
   Vector &tmpVar (mem->tmpVar);
+  Vector &tmpControl (mem->tmpControl);
   const Vector &err (mem->err);
 
   // tmpTask <- S^-1 * U^T * err
@@ -326,9 +347,12 @@ void updateControl (MemoryTaskSOT* mem, const Matrix::Index rankJ,
   // control <- kernel * (V * S^-1 * U^T * err)
   if (has_kernel) {
     tmpVar.head(kernel.cols()).noalias() = svd.matrixV().leftCols(rankJ) * tmpTask.head(rankJ);
-    control.noalias() += kernel * tmpVar.head(kernel.cols());
+    tmpControl.noalias() = kernel * tmpVar.head(kernel.cols());
   } else
-    control.noalias() += svd.matrixV().leftCols(rankJ) * tmpTask.head(rankJ);
+    tmpControl.noalias() = svd.matrixV().leftCols(rankJ) * tmpTask.head(rankJ);
+  if (tmpControl.squaredNorm() > threshold) return false;
+  control += tmpControl;
+  return true;
 }
 
 bool isFullPostureTask (Task* task, const Matrix::Index& nDof,
@@ -534,19 +558,33 @@ dynamicgraph::Vector &Sot::computeControlLaw(dynamicgraph::Vector &control,
       if (!controlIsZero)
         mem->err.noalias() -= JK * control;
 
-      updateControl (mem, rankJ, has_kernel, kernel, control);
-      controlIsZero = false;
+      bool success = updateControl (mem, rankJ, has_kernel, kernel, control,
+          maxControlIncrementSquaredNorm);
+      if (success) {
+        controlIsZero = false;
 
-      if (!last) {
-        Matrix::Index cols = svd.matrixV().cols() - rankJ;
-        if (has_kernel)
-          mem->getKernel(nbJoints, cols).noalias()
-            = kernel * svd.matrixV().rightCols(cols);
-        else
-          mem->getKernel(nbJoints, cols).noalias()
-            = svd.matrixV().rightCols(cols);
-        makeMap (kernel, mem->kernel);
-        has_kernel = true;
+        if (!last) {
+          Matrix::Index cols = svd.matrixV().cols() - rankJ;
+          if (has_kernel)
+            mem->getKernel(nbJoints, cols).noalias()
+              = kernel * svd.matrixV().rightCols(cols);
+          else
+            mem->getKernel(nbJoints, cols).noalias()
+              = svd.matrixV().rightCols(cols);
+          makeMap (kernel, mem->kernel);
+          has_kernel = true;
+        }
+      } else {
+        DYNAMIC_GRAPH_ENTITY_ERROR(*this) << iterTime << ": SOT " << getName() <<
+          " disabled task " << taskA.getName() << " at level " << iterTask
+          << " because norm exceeded the limit.\n";
+        DYNAMIC_GRAPH_ENTITY_DEBUG(*this) <<
+          "control = " << control.transpose().format(python) << "\n"
+          "J = " << JK.format(python) << "\n"
+          "err - J * control = " << mem->err.transpose().format(python) << "\n"
+          "J * kernel = " << Jt->format(python) << "\n"
+          "control_update = " << mem->tmpControl.transpose().format(python) << "\n"
+          ;
       }
     }
     /***/ sotCOUNTER(5, 6); // QDOT + Projector

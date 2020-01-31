@@ -28,7 +28,7 @@ public: //   protected:
   typedef Eigen::Map<const Matrix, Eigen::internal::traits<Matrix>::Alignment> KernelConst_t;
 
   /* Internal memory to reduce the dynamic allocation at task resolution. */
-  dg::Vector err, tmpTask, tmpVar;
+  dg::Vector err, tmpTask, tmpVar, tmpControl;
   dg::Matrix Jt; //( nJ,mJ );
 
   dg::Matrix JK; //(nJ,mJ);
