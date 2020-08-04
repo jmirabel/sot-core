@@ -22,14 +22,6 @@
 using namespace std;
 using namespace dynamicgraph::sot;
 
-double drand(void) { return 2 * ((double)rand()) / RAND_MAX - 1; }
-dynamicgraph::Matrix &mrand(dynamicgraph::Matrix &J) {
-  for (int i = 0; i < J.rows(); ++i)
-    for (int j = 0; j < J.cols(); ++j)
-      J(i, j) = drand();
-  return J;
-}
-
 int main(void) {
   sotDEBUGF("# In {");
 
