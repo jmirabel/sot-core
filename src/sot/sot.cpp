@@ -405,9 +405,21 @@ void applySaturation (const Vector& q, const Vector& q0, const Vector& lower, co
     if (p_i >= upper[i]) {
       if (J.col(i).dot(err) >= -0.7 * err.norm() * J.col(i).norm())
         sat[i] = true;
+      else
+        std::cout << "No saturation: J.col(" << i << ").dot(err) = "
+          << J.col(i).dot(err)
+          << " -- err.norm() = " << err.norm()
+          << " -- J.col.norm() = " << J.col(i).norm()
+          << " -- cos_angle = " << J.col(i).dot(err) / (err.norm() * J.col(i).norm()) << '\n';
     } else if (p_i <= lower[i]) {
       if (J.col(i).dot(err) <=  0.7 * err.norm() * J.col(i).norm())
         sat[i] = true;
+      else
+        std::cout << "No saturation: J.col(" << i << ").dot(err) = "
+          << J.col(i).dot(err)
+          << " -- err.norm() = " << err.norm()
+          << " -- J.col.norm() = " << J.col(i).norm()
+          << " -- cos_angle = " << J.col(i).dot(err) / (err.norm() * J.col(i).norm()) << '\n';
     }
     if (sat[i])
       J.col(i).setZero();
