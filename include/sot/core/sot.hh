@@ -103,6 +103,19 @@ public:
   ~Sot(void) { /* TODO!! */
   }
 
+  /*! \name Methods to handle the joint limits
+    @{
+  */
+  void upperLimits(const Vector& ul);
+
+  void lowerLimits(const Vector& ll);
+
+  const Vector& upperLimits() const;
+
+  const Vector& lowerLimits() const;
+
+  /*! @} */
+
   /*! \name Methods to handle the stack.
     @{
   */
@@ -182,6 +195,8 @@ public: /* --- SIGNALS --- */
    * OpenHRP plugins).
    */
   SignalPtr<dynamicgraph::Vector, int> q0SIN;
+  /*! \brief current configuration of the robot */
+  SignalPtr<dynamicgraph::Vector, int> stateSIN;
   /*! \brief A matrix K whose columns are a base of the desired velocity.
    * In other words, \f$ \dot{q} = K * u \f$ where \f$ u \f$ is the free
    * parameter to be computed.
@@ -198,6 +213,9 @@ public: /* --- SIGNALS --- */
   /*! \brief This method write the priority between tasks in the output stream
    * os. */
   virtual std::ostream &writeGraph(std::ostream &os) const;
+
+private:
+  Vector upperLimits_, lowerLimits_;
 };
 } // namespace sot
 } // namespace dynamicgraph

@@ -62,8 +62,9 @@ const Eigen::IOFormat python(Eigen::FullPrecision, 0,
 Sot::Sot(const std::string &name)
     : Entity(name), stack(), nbJoints(0), enablePostureTaskAcceleration(false),
       maxControlIncrementSquaredNorm(std::numeric_limits<double>::max()),
-      q0SIN(NULL, "sotSOT(" + name + ")::input(double)::q0"),
-      proj0SIN(NULL, "sotSOT(" + name + ")::input(double)::proj0"),
+      q0SIN(NULL, "sotSOT(" + name + ")::input(vector)::q0"),
+      stateSIN(NULL, "sotSOT(" + name + ")::input(vector)::state"),
+      proj0SIN(NULL, "sotSOT(" + name + ")::input(matrix)::proj0"),
       inversionThresholdSIN(NULL,
                             "sotSOT(" + name + ")::input(double)::damping"),
       controlSOUT(boost::bind(&Sot::computeControlLaw, this, _1, _2),
@@ -71,7 +72,7 @@ Sot::Sot(const std::string &name)
                   "sotSOT(" + name + ")::output(vector)::control") {
   inversionThresholdSIN = INVERSION_THRESHOLD_DEFAULT;
 
-  signalRegistration(inversionThresholdSIN << controlSOUT << q0SIN << proj0SIN);
+  signalRegistration(inversionThresholdSIN << controlSOUT << q0SIN << stateSIN << proj0SIN);
 
   // Commands
   //
@@ -189,6 +190,54 @@ Sot::Sot(const std::string &name)
               "    returns the list of tasks pushed inside the stack.\n"
               "    \n";
   addCommand("list", new command::classSot::List(*this, docstring));
+
+  addCommand("setUpperLimits",
+             dynamicgraph::command::makeDirectSetter(
+                 *this, &upperLimits_,
+                 dynamicgraph::command::docDirectSetter(
+                     "set the upper position limits.",
+                     "vector")));
+
+  addCommand("getUpperLimits",
+             dynamicgraph::command::makeDirectGetter(
+                 *this, &upperLimits_,
+                 dynamicgraph::command::docDirectGetter(
+                     "get the upper position limits.",
+                     "vector")));
+
+  addCommand("setLowerLimits",
+             dynamicgraph::command::makeDirectSetter(
+                 *this, &lowerLimits_,
+                 dynamicgraph::command::docDirectSetter(
+                     "set the lower position limits.",
+                     "vector")));
+
+  addCommand("getLowerLimits",
+             dynamicgraph::command::makeDirectGetter(
+                 *this, &lowerLimits_,
+                 dynamicgraph::command::docDirectGetter(
+                     "get the lower position limits.",
+                     "vector")));
+}
+
+void Sot::upperLimits(const Vector& ul)
+{
+  upperLimits_ = ul;
+}
+
+void Sot::lowerLimits(const Vector& ll)
+{
+  lowerLimits_ = ll;
+}
+
+const Vector& Sot::upperLimits() const
+{
+  return upperLimits_;
+}
+
+const Vector& Sot::lowerLimits() const
+{
+  return lowerLimits_;
 }
 
 /* --------------------------------------------------------------------- */
@@ -312,8 +361,8 @@ void Sot::defineNbDof(const unsigned int &nbDof) {
 /* --------------------------------------------------------------------- */
 /* --------------------------------------------------------------------- */
 
-const Matrix &computeJacobianActivated(TaskAbstract *Ta, Task *T, Matrix &Jmem,
-                                       const int &iterTime) {
+void computeJacobianActivated(TaskAbstract *Ta, Task *T, Matrix &Jmem,
+                              const int &iterTime) {
   if (T != NULL) {
     const Flags &controlSelec = T->controlSelectionSIN(iterTime);
     sotDEBUG(25) << "Control selection = " << controlSelec << endl;
@@ -323,17 +372,46 @@ const Matrix &computeJacobianActivated(TaskAbstract *Ta, Task *T, Matrix &Jmem,
         for (int i = 0; i < Jmem.cols(); ++i)
           if (!controlSelec(i))
             Jmem.col(i).setZero();
-        return Jmem;
       } else
-        return Ta->jacobianSOUT.accessCopy();
+        Jmem = Ta->jacobianSOUT.accessCopy();
     } else {
       sotDEBUG(15) << "Task not activated." << endl;
       const Matrix &Jac = Ta->jacobianSOUT.accessCopy();
       Jmem = Matrix::Zero(Jac.rows(), Jac.cols());
-      return Jmem;
     }
   } else /* No selection specification: nothing to do. */
-    return Ta->jacobianSOUT.accessCopy();
+    Jmem = Ta->jacobianSOUT.accessCopy();
+}
+
+typedef std::vector<bool> Saturation_t;
+
+void applySaturation (const Vector& q, const Vector& q0, const Vector& lower, const Vector& upper,
+  Saturation_t& sat, Matrix& J, const Vector& err) {
+  // Check sizes.
+  if (   q.size() == 0
+      || q.size() != q0.size()
+      || q.size() != J.cols()
+      || err.size() != J.rows()
+      || q.size() != lower.size()
+      || q.size() != upper.size())
+    return;
+  // Skip the first 6 DoF which corresponds to the freeflyer.
+  for (int i = 6; i < q.size(); ++i) {
+    if (sat[i]) {
+      J.col(i).setZero();
+      continue;
+    }
+    double p_i = q[i] + q0[i];
+    if (p_i >= upper[i]) {
+      if (J.col(i).dot(err) >= -0.7 * err.norm() * J.col(i).norm())
+        sat[i] = true;
+    } else if (p_i <= lower[i]) {
+      if (J.col(i).dot(err) <=  0.7 * err.norm() * J.col(i).norm())
+        sat[i] = true;
+    }
+    if (sat[i])
+      J.col(i).setZero();
+  }
 }
 
 typedef MemoryTaskSOT::Kernel_t Kernel_t;
@@ -494,6 +572,9 @@ dynamicgraph::Vector &Sot::computeControlLaw(dynamicgraph::Vector &control,
     sotDEBUG(25) << "No initial velocity." << endl;
   }
 
+  static const Vector emptyState;
+  const Vector& state (stateSIN.isPlugged() ? stateSIN.access(iterTime) : emptyState);
+
   sotDEBUGF(5, " --- Time %d -------------------", iterTime);
   unsigned int iterTask = 0;
   KernelConst_t kernel(NULL, 0, 0);
@@ -510,6 +591,7 @@ dynamicgraph::Vector &Sot::computeControlLaw(dynamicgraph::Vector &control,
           << " rows while " << nbJoints << " expected.\n";
     }
   }
+  Saturation_t saturation (nbJoints, false);
   for (StackType::iterator iter = stack.begin(); iter != stack.end(); ++iter) {
     sotSTARTPARTCOUNTERS;
 
@@ -556,8 +638,9 @@ dynamicgraph::Vector &Sot::computeControlLaw(dynamicgraph::Vector &control,
       assert(taskA.jacobianSOUT.accessCopy().cols() == nbJoints);
 
       /* --- COMPUTE S * JK --- */
-      const Matrix &JK =
-          computeJacobianActivated(&taskA, task, mem->JK, iterTime);
+      computeJacobianActivated(&taskA, task, mem->JK, iterTime);
+      applySaturation(state, control, lowerLimits_, upperLimits_, saturation, mem->JK, mem->err);
+      const Matrix &JK = mem->JK
       /***/ sotCOUNTER(2, 3); // compute JK*S
 
       /* --- COMPUTE Jt --- */
